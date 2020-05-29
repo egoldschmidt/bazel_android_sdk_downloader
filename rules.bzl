@@ -28,7 +28,7 @@ def _android_sdk_repository_impl(repo_ctx):
 def _install_sdk_impl(ctx):
     ctx.actions.write(ctx.outputs._output, '''
         {{sdkmanager}} --sdk_root='{path}' 'platforms;android-{api_level}' 'build-tools;{build_tools_version}'
-
+        {{sdkmanager}} --sdk_root='{path}' {sdk_packages}
     '''.format(sdkmanager = ctx.file._sdk_manager.path), is_executable = True)
     runfiles = ctx.runfiles(files = [ctx.file._sdk_manager])
     return [DefaultInfo(executable = ctx.outputs._output, runfiles = runfiles)]
@@ -52,6 +52,7 @@ install_sdk = rule(
         output_name = _INSTALL_OUTPUT_NAME,
         api_level = repo_ctx.attr.api_level,
         build_tools_version = repo_ctx.attr.build_tools_version,
+        sdk_packages = ' '.join(["'{}'".format(p) for p in repo_ctx.attr.sdk_packages]),
         path = _SDK_ROOT_PATH),
     executable = False)
 
@@ -71,16 +72,18 @@ _android_sdk_repository = repository_rule(
     attrs = {
         "api_level": attr.int(mandatory = True),
         "build_tools_version": attr.string(mandatory = True),
+        "sdk_packages": attr.string_list(mandatory = False),
     }
 )
 
 # This is the main export for the file
-def android_sdk_repository(name = None, workspace_name = None, api_level = None, build_tools_version = None):
+def android_sdk_repository(name = None, workspace_name = None, api_level = None, build_tools_version = None, sdk_packages = None):
     # Support downloading the SDK as a repository (inspired by `@yarn//yarn` )
     _android_sdk_repository(
         name = name,
         api_level = api_level,
         build_tools_version = build_tools_version,
+        sdk_packages = sdk_packages,
     )
 
     # Create an android_sdk_repository targetting the downloaded repo
@@ -96,3 +99,15 @@ def android_sdk_repository(name = None, workspace_name = None, api_level = None,
         api_level = api_level,
         build_tools_version = build_tools_version,
     )
+
+    if sdk_packages and 'ndk-bundle' in sdk_packages:
+        native.android_ndk_repository(
+            name = "android_ndk_repository_" + name,
+            path = "bazel-bin/external/{name}/{install_target_name}/{install_output_name}.runfiles/{workspace_name}/{sdk_root_path}/ndk-bundle".format(
+                    name = name,
+                    install_target_name = _INSTALL_TARGET_NAME,
+                    install_output_name = _INSTALL_OUTPUT_NAME,
+                    workspace_name = workspace_name,
+                    sdk_root_path = _SDK_ROOT_PATH),
+            api_level = api_level,
+        )
